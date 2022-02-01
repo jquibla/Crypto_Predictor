@@ -1,6 +1,8 @@
 # Crypto_Predictor
 The objective of this project is to predict if tomorrow Bitcoin will close higher or lower than today.
 
-In order to achieve this I will initially try using closing prices and trading volumes up to today. In a later phase I will incorporate the evolution of other cryptocurrencies, the Nasdaq index and gold valuations.
+During the project I use ARIMA and various classification models, several transformers and different combinations of data, including Bitcoin closing price and volume and Gold and NAsdaq Comoposite closing prices.
 
-In the final phase I will try to make predictions on other cryptocurrencies like Ethereum and Cardano.
+In order to run the code, please execute the following instructions from your cloned repository to make sure you are using the proper packages:
+	- conda env create --file Crypto_Predictor.yml
+	- conda activate Crypto_Predictor
