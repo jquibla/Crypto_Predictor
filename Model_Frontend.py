@@ -8,10 +8,95 @@ from sklearn.preprocessing import PowerTransformer
 from sklearn.neighbors import KNeighborsClassifier
 import numbers
 import datetime
+from selenium import webdriver
+from time import sleep
 
 
 
-def data_engineering(btc_price):
+
+def harvest_data(btc_price):
+
+	url = 'https://coinmarketcap.com/currencies/bitcoin/historical-data/'
+	driver = webdriver.Firefox()
+	driver.get(url)
+	driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+	sleep(5)
+	url_html = driver.page_source
+	bitcoin_table_sc = pd.read_html(url_html)[0]
+	driver.close()
+
+	bitcoin_table_sc = bitcoin_table_sc.set_index('Date')
+	bitcoin_table_sc.index = pd.to_datetime(arg=bitcoin_table_sc.index,format='%b %d, %Y')
+	bitcoin_table_sc = bitcoin_table_sc.drop(['Open*', 'High', 'Low', 'Volume', 'Market Cap'], axis=1)
+	bitcoin_table_sc = bitcoin_table_sc.rename(columns={'Close**': 'Close'})
+	bitcoin_table_sc['Close'] = bitcoin_table_sc['Close'].str[1:].str.replace(',','').astype(float)
+
+	last_date_stored = btc_price.index[-1]
+	last_date_scraped = bitcoin_table_sc.index[0]
+
+	for date_i in pd.date_range(last_date_stored, last_date_scraped):
+		if date_i==last_date_stored:
+			btc_price.loc[date_i]=bitcoin_table_sc.loc[date_i]
+		else:
+			btc_price = btc_price.append(bitcoin_table_sc.loc[date_i])
+	
+	btc_price.to_csv('./data_proc/Bitcoin_Price_For_Frontend.csv')
+
+
+
+# This function returns the prediction for the specified date.
+# last_closing_price is an optional parameter, it's used when the closing price for today is still unknown (ie the day is not over)
+# using last_closing_price you can add a price for today in the dataframe btc_price in order to simulate a supposed closing price
+def predict_for_date(btc_price, date_pred, last_closing_price=0):
+	btc_price_m=btc_price.copy()
+	if last_closing_price > 0:
+		aux_df = pd.DataFrame([last_closing_price], index=[date_pred-datetime.timedelta(days=1)], columns=['Close'])
+		aux_df.index.name = 'Date'
+		btc_price_m = btc_price_m.append(aux_df)
+	
+	# I indicate this is not for a simulation, so that the function creates a row for the last date in the dataframe
+	data_for_model = data_engineering(btc_price_m, False)
+
+	#Model building
+	model=KNeighborsClassifier(n_neighbors=9)
+
+	data_train = data_for_model[:date_pred-datetime.timedelta(days=2)].copy()
+	data_for_pred = data_for_model[date_pred-datetime.timedelta(days=1):date_pred].copy()
+
+	#I separate the variable I want to predict (if bitcoin price will go up or down the following day)
+	X_train=data_train.drop(labels=['subida', 'varPSig'], axis=1)
+	y_train=data_train['subida']
+
+	X_for_pred = data_for_pred.drop(labels=['subida', 'varPSig'], axis=1)
+    
+	number_columns = X_train.select_dtypes('number').columns
+
+	# as explained above, we only use PowerTransformer_yeo-johnson as column transformer
+	transf=[
+        	('scaler', PowerTransformer(method='yeo-johnson', standardize=False),number_columns)
+        	]
+
+	coltr=ColumnTransformer(transformers=transf, remainder='passthrough')
+	
+	#model training
+	X_train_ct = coltr.fit_transform(X_train)
+	model.fit(X_train_ct, y_train)
+        
+	#We predict if the price will go up the next day
+	X_for_pred_ct = coltr.transform(X_for_pred)
+	y_pred_next = model.predict(X_for_pred_ct)
+
+	if  y_pred_next[0]:
+		answer = 'Bitcoin price will increase!'
+	else:
+		answer = 'Bitcoin price will drop'
+	
+	return answer
+
+
+
+
+def data_engineering(btc_price, simulation=True):
 	btc_hist_m=btc_price.copy()
 	btc_hist_m.reset_index(level=0, inplace=True)
 
@@ -66,6 +151,20 @@ def data_engineering(btc_price):
 			dtemp = dtemp.rename(columns=new_cols)
 
 			data_for_use = data_for_use.append(dtemp.rename(columns=new_cols))
+
+	if not simulation:
+		i = i+1
+		dtemp = pd.concat([pd.DataFrame(btc_hist_m['var_dia_ant'][i-29:i+1][::-1].values),
+                            pd.DataFrame(btc_hist_m['var_sem_ant'][i-92:i-29][::-7].values),
+                            pd.DataFrame(btc_hist_m['var_mes_ant'][i-362:i-92][::-30].values),
+                            pd.DataFrame([False]),
+                            pd.DataFrame([0.01])],
+                          ignore_index=True, axis=0).T
+        
+		dtemp = dtemp.set_index(keys=[btc_hist_m['Date'].loc[[i]]])
+		new_cols = {x: y for x, y in zip(dtemp.columns, data_for_use.columns)}
+		dtemp = dtemp.rename(columns=new_cols)
+		data_for_use = data_for_use.append(dtemp.rename(columns=new_cols))
 
 	return data_for_use
 
