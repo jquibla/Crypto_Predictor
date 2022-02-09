@@ -14,17 +14,21 @@ from time import sleep
 
 
 
+# This function performs web scraping and updates the file with Bitcoin prices
 def harvest_data(btc_price):
 
 	url = 'https://coinmarketcap.com/currencies/bitcoin/historical-data/'
 	driver = webdriver.Firefox()
 	driver.get(url)
+	#We go to the bottom of the page beacuse the table with prices won't load any other way
 	driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+	#We wait a little bit just in case the page takes time to load
 	sleep(5)
 	url_html = driver.page_source
 	bitcoin_table_sc = pd.read_html(url_html)[0]
 	driver.close()
 
+	# We change the format of the scraped table
 	bitcoin_table_sc = bitcoin_table_sc.set_index('Date')
 	bitcoin_table_sc.index = pd.to_datetime(arg=bitcoin_table_sc.index,format='%b %d, %Y')
 	bitcoin_table_sc = bitcoin_table_sc.drop(['Open*', 'High', 'Low', 'Volume', 'Market Cap'], axis=1)
@@ -34,12 +38,14 @@ def harvest_data(btc_price):
 	last_date_stored = btc_price.index[-1]
 	last_date_scraped = bitcoin_table_sc.index[0]
 
+	#We include the new values in the Bitcoin price dataframe
 	for date_i in pd.date_range(last_date_stored, last_date_scraped):
 		if date_i==last_date_stored:
 			btc_price.loc[date_i]=bitcoin_table_sc.loc[date_i]
 		else:
 			btc_price = btc_price.append(bitcoin_table_sc.loc[date_i])
 	
+	#We store the new and old values into the original file
 	btc_price.to_csv('./data_proc/Bitcoin_Price_For_Frontend.csv')
 
 
@@ -71,7 +77,7 @@ def predict_for_date(btc_price, date_pred, last_closing_price=0):
     
 	number_columns = X_train.select_dtypes('number').columns
 
-	# as explained above, we only use PowerTransformer_yeo-johnson as column transformer
+	# We only use PowerTransformer_yeo-johnson as column transformer
 	transf=[
         	('scaler', PowerTransformer(method='yeo-johnson', standardize=False),number_columns)
         	]
@@ -95,7 +101,7 @@ def predict_for_date(btc_price, date_pred, last_closing_price=0):
 
 
 
-
+# This function returns a dataframe with the data engineered to be jused in classification models
 def data_engineering(btc_price, simulation=True):
 	btc_hist_m=btc_price.copy()
 	btc_hist_m.reset_index(level=0, inplace=True)
@@ -124,6 +130,7 @@ def data_engineering(btc_price, simulation=True):
 	#week-to-week price variation from 4 weeks before to 12 weeks before
 	#month-to-month price variation from 3 months before to 11 months before
 	#if the price went up (1) o not (0) the next day. This is what we are trying to predict
+	#tha actual price variation during the next day
 	#all this data starting 2016/1/1
 
 	columnasData=['varP0', 'varP1', 'varP2', 'varP3', 'varP4', 'varP5', 'varP6', 'varP7', 'varP8', 'varP9',
@@ -152,6 +159,7 @@ def data_engineering(btc_price, simulation=True):
 
 			data_for_use = data_for_use.append(dtemp.rename(columns=new_cols))
 
+	# If I'm not simulating, I need to add the values for the last day, so I can predict the next day.
 	if not simulation:
 		i = i+1
 		dtemp = pd.concat([pd.DataFrame(btc_hist_m['var_dia_ant'][i-29:i+1][::-1].values),
@@ -168,6 +176,8 @@ def data_engineering(btc_price, simulation=True):
 
 	return data_for_use
 
+
+# this function runs the model using the period, data and transaction fee provided
 def run_model(data_model, start_date, end_date, fee):
 	data_for_use_basic = data_model.copy()
 	
