@@ -9,6 +9,7 @@ from sklearn.neighbors import KNeighborsClassifier
 import numbers
 import datetime
 from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
 from time import sleep
 
 
@@ -18,7 +19,9 @@ from time import sleep
 def harvest_data(btc_price):
 
 	url = 'https://coinmarketcap.com/currencies/bitcoin/historical-data/'
-	driver = webdriver.Firefox()
+	options = Options()
+	options.binary_location = r"C:/Program Files/Mozilla Firefox/firefox.exe"
+	driver = webdriver.Firefox(options=options)
 	driver.get(url)
 	#We go to the bottom of the page because the table with prices won't load any other way
 	driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
